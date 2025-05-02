@@ -103,7 +103,7 @@ async function getChannelInfo(channelId: string): Promise<ChannelInfo | null> {
 }
 
 async function scrapeSocialLinks(channelUrl: string): Promise<Partial<ChannelInfo>> {
-  const browser = await puppeteer.launch({ headless: false });
+  const browser = await puppeteer.launch({ headless: true });
   const page = await browser.newPage();
   try {
     await page.goto(`${channelUrl}/about`, { waitUntil: 'networkidle2', timeout: 60000 });
@@ -217,32 +217,56 @@ async function saveToExcel(data: ChannelInfo[], outputPath: string) {
 
 async function main() {
   try {
+    console.log('📥 Reading CSV from input/link.csv...');
     const urls = await readCsv('input/link.csv');
+    console.log(`🔍 Found ${urls.length} URLs to process.`);
+
     const results: ChannelInfo[] = [];
 
-    for (const rawUrl of urls) {
+    for (const [index, rawUrl] of urls.entries()) {
       const url = rawUrl.trim();
       if (!url) continue;
 
+      console.log(`\n🔗 [${index + 1}/${urls.length}] Processing: ${url}`);
+
       const handle = extractHandleFromUrl(url);
-      if (!handle) continue;
+      if (!handle) {
+        console.warn(`⚠️ Skipping: Couldn't extract handle from URL.`);
+        continue;
+      }
+      console.log(`   👉 Extracted handle: @${handle}`);
 
       const channelId = await resolveChannelIdFromHandle(handle);
-      if (!channelId) continue;
+      if (!channelId) {
+        console.warn(`⚠️ Skipping: Failed to resolve channel ID.`);
+        continue;
+      }
+      console.log(`   ✅ Resolved channel ID: ${channelId}`);
 
       const info = await getChannelInfo(channelId);
-      if (!info) continue;
+      if (!info) {
+        console.warn(`⚠️ Skipping: Couldn't fetch channel info.`);
+        continue;
+      }
+      console.log(`   📺 Channel: ${info.channelName}`);
+      console.log(`   📅 Last Post: ${info.lastPost} → ${info.channelStatus}`);
 
       const socialLinks = await scrapeSocialLinks(info.url);
       Object.assign(info, socialLinks);
       results.push(info);
     }
 
+    console.log('\n💾 Saving data to CSV...');
     await saveToCsv(results, 'output/results.csv');
+
+    console.log('📊 Saving data to Excel...');
     await saveToExcel(results, 'output/results.xlsx');
+
+    console.log('\n✅ All done!');
   } catch (error) {
     console.error('❌ Error in main():', error);
   }
 }
+
 
 main();
